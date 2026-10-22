@@ -6,24 +6,40 @@ declare global {
   var _postgresPool: Pool | undefined;
 }
 
-export const createPool = () => {
-  if (!global._postgresPool) {
-    global._postgresPool = new Pool({
-      host: process.env.SQL_HOST,
-      user: process.env.SQL_USER,
-      password: process.env.SQL_PASSWORD,
-      database: process.env.SQL_DB_NAME,
-      max: 10,
-      connectionTimeoutMillis: 15000,
-    });
+// Check whether Cloud SQL / PostgreSQL environment variables are provided
+export const isSqlConfigured = Boolean(
+  process.env.SQL_HOST &&
+  process.env.SQL_USER &&
+  process.env.SQL_DB_NAME
+);
 
-    global._postgresPool.on('error', (err) => {
-      console.error('Unexpected error on idle SQL pool client:', err);
-    });
+export const createPool = (): Pool | null => {
+  if (!isSqlConfigured) {
+    return null;
+  }
+
+  if (!global._postgresPool) {
+    try {
+      global._postgresPool = new Pool({
+        host: process.env.SQL_HOST,
+        user: process.env.SQL_USER,
+        password: process.env.SQL_PASSWORD,
+        database: process.env.SQL_DB_NAME,
+        max: 10,
+        connectionTimeoutMillis: 5000,
+      });
+
+      global._postgresPool.on('error', (err) => {
+        console.warn('SQL pool connection notice:', err?.message || err);
+      });
+    } catch (e) {
+      console.warn('Could not initialize PostgreSQL pool:', e);
+      return null;
+    }
   }
   return global._postgresPool;
 };
 
 const pool = createPool();
 
-export const db = drizzle(pool, { schema });
+export const db = pool ? drizzle(pool, { schema }) : null;
